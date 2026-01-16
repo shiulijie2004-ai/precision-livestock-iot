@@ -1,0 +1,48 @@
+version: '3.8'
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    ports: ["1883:1883"]
+    volumes:
+      - ./docker-data/mosquitto/config:/mosquitto/config
+      - ./docker-data/mosquitto/data:/mosquitto/data
+      - ./docker-data/mosquitto/log:/mosquitto/log
+    restart: unless-stopped 
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports: ["8086:8086"]
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=password1234
+      - DOCKER_INFLUXDB_INIT_ORG=farm-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=animal-data
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=password1234
+    volumes:
+      - ./docker-data/influxdb/data:/var/lib/influxdb2
+      - ./docker-data/influxdb/config:/etc/influxdb2
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:9.5.3
+    container_name: grafana
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin1234
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=smtp.gmail.com:587
+      - GF_SMTP_USER=shiulj2004@gmail.com
+      - GF_SMTP_PASSWORD=uegdzgroskwringm
+      - GF_SMTP_FROM_ADDRESS=shiulj2004@gmail.com
+      - GF_SMTP_FROM_NAME="Grafana Alerts"
+      - GF_SMTP_SKIP_VERIFY=true
+      - GF_SMTP_STARTTLS_POLICY=MandatoryStartTLS
+    volumes:
+      - ./docker-data/grafana/data:/var/lib/grafana
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+

@@ -1,0 +1,11 @@
+numpy
+pandas
+scipy
+scikit-learn
+paho-mqtt
+influxdb-client
+matplotlib
+seaborn
+jupyterlab
+notebook
+tensorboard

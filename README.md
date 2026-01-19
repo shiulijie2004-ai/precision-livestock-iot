@@ -34,17 +34,20 @@ Git
 1) Clone the Repository
 
 git clone https://github.com/shiulijie2004-ai/precision-livestock-iot.git
+
 cd precision-livestock-iot
 
 
 2) Create the Python Environment (Conda)
 
 conda env create -f environment.yml
+
 conda activate plf-iot
 
 
 
 3) Launch Backend Services (Mosquitto + InfluxDB + Grafana)
+
 docker-compose up -d
 
 

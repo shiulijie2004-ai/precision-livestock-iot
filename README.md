@@ -1,14 +1,4 @@
-To make your README look like the **second image**, you mainly need these Markdown elements:
 
-* Headings: `##`, `###`
-* Numbered lists: `1. 2. 3.`
-* Code blocks: triple backticks ```
-* Callouts (simple): emoji + **bold** text (GitHub Markdown doesn’t have “official” callout boxes by default, but emojis work well)
-
-Below is a **copy-paste ready README.md section** (you can paste into your repo). It follows the same style as your second image (Installation → create installer file → run installer → interactive setup → launch dashboard).
-
-````md
----
 
 ## Installation
 

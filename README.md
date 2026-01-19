@@ -16,36 +16,6 @@ Modern livestock farming faces challenges in monitoring animal health and behavi
 Small-to-medium cattle/dairy farms, agricultural researchers, and open-source hardware enthusiasts. :contentReference[oaicite:6]{index=6}
 
 ---
-
-
-
-## Repository Structure
-
-Suggested project structure: :contentReference[oaicite:14]{index=14}
-
-```text
-precision-livestock-iot/
-├── data/
-│   ├── raw/                # raw datasets (not tracked)
-│   └── processed/          # processed datasets (not tracked)
-├── docker-compose.yml      # backend services (Mosquitto/InfluxDB/Grafana)
-├── docker-data/            # persisted volumes for containers (local only)
-├── docs/                   # documents, diagrams, writeups
-├── firmware/               # ESP32 sensor-node firmware
-├── notebooks/              # EDA / experiments
-├── reports/figures/        # exported figures
-├── results/
-│   ├── checkpoints/        # saved training checkpoints
-│   └── metrics/            # evaluation outputs
-├── scripts/                # helper scripts
-├── src/
-│   ├── data/               # ingestion + preprocessing
-│   ├── models/             # model definitions
-│   ├── train/              # training + evaluation
-│   └── utils/              # shared utilities
-└── tests/                  # unit/integration tests
-
-
 Getting Started
 Prerequisites
 
@@ -62,11 +32,13 @@ Git
 
 
 1) Clone the Repository
+
 git clone https://github.com/shiulijie2004-ai/precision-livestock-iot.git
 cd precision-livestock-iot
 
 
 2) Create the Python Environment (Conda)
+
 conda env create -f environment.yml
 conda activate plf-iot
 
@@ -120,4 +92,34 @@ Run preprocessing scripts in src/data/
 Train models via scripts in src/train/
 
 Save metrics to results/metrics/ and checkpoints to results/checkpoints/
+
+
+
+## Repository Structure
+
+Suggested project structure: :contentReference[oaicite:14]{index=14}
+
+```text
+precision-livestock-iot/
+├── data/
+│   ├── raw/                # raw datasets (not tracked)
+│   └── processed/          # processed datasets (not tracked)
+├── docker-compose.yml      # backend services (Mosquitto/InfluxDB/Grafana)
+├── docker-data/            # persisted volumes for containers (local only)
+├── docs/                   # documents, diagrams, writeups
+├── firmware/               # ESP32 sensor-node firmware
+├── notebooks/              # EDA / experiments
+├── reports/figures/        # exported figures
+├── results/
+│   ├── checkpoints/        # saved training checkpoints
+│   └── metrics/            # evaluation outputs
+├── scripts/                # helper scripts
+├── src/
+│   ├── data/               # ingestion + preprocessing
+│   ├── models/             # model definitions
+│   ├── train/              # training + evaluation
+│   └── utils/              # shared utilities
+└── tests/                  # unit/integration tests
+
+
 

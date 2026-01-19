@@ -1,86 +1,105 @@
+# IoT Application for Tracking Farm Animals and Utilizing Their Biological Data
 
+An open-source, low-cost Precision Livestock Farming (PLF) system for **real-time cattle monitoring** using wearable sensors, an on-premise gateway, and a machine learning pipeline to detect key behaviours and potential health anomalies (e.g., lameness/estrus).
 
-## Installation
+---
 
-> ⚠️ **Important:** Do NOT run the installer using `sudo`. Run as a normal user.
+## About the Project
 
-### 1) Create the installer file
+Modern livestock farming faces challenges in monitoring animal health and behaviour efficiently. This project builds an end-to-end IoT + ML prototype that:
 
-Create a file named `install_fyp.sh` in the project root:
+- Collects biological/behavioural signals from **wearable sensor nodes** (e.g., accelerometer/IMU, temperature; optionally GPS).
+- Streams data to an on-farm **gateway** (e.g., Raspberry Pi).
+- Ingests via **MQTT**, stores time-series data in **InfluxDB**, and visualizes insights in **Grafana**.
+- Trains ML models (e.g., **LSTM**) to classify behaviours and support anomaly detection.
 
+### Target Users
+Small-to-medium cattle/dairy farms, agricultural researchers, and open-source hardware enthusiasts.
+
+---
+
+## Getting Started
+
+### Prerequisites
+- Python 3.9+
+- Conda (recommended)
+- Docker + Docker Compose
+- Git
+
+### 1) Clone the Repository
 ```bash
-nano install_fyp.sh
+git clone https://github.com/shiulijie2004-ai/precision-livestock-iot.git  
+cd precision-livestock-iot  
 ````
 
-Paste your installer script content inside `install_fyp.sh`, then save:
 
-* Save: `CTRL + O` → Enter
-* Exit: `CTRL + X`
-
-Make it executable:
-
+### 2) Create the Python Environment (Conda)
 ```bash
-chmod +x install_fyp.sh
-```
+conda env create -f environment.yml  
+conda activate plf-iot  
+````
+
+
+### 3) Launch Backend Services (Mosquitto + InfluxDB + Grafana)
+```bash
+docker-compose up -d  
+````
+
+**Service URLs/Ports**
+- MQTT Broker: `localhost:1883`
+- InfluxDB UI: `http://localhost:8086`
+- Grafana: `http://localhost:3000`
 
 ---
 
-### 2) Run the installer (no sudo)
+## Usage
 
-Run:
+### A) Send Sensor Data (MQTT)
 
-```bash
-bash install_fyp.sh
-```
+Configure your ESP32 firmware in `firmware/` to publish sensor readings to the MQTT broker.
 
----
+Use topic conventions like:
+- `farm/<cow_id>/imu`
+- `farm/<cow_id>/temp`
 
-## Interactive Setup
+A Python ingestion script (in `src/data/`) can subscribe and write into InfluxDB.
 
-During installation, you will be asked:
+Add your final topic schema and message format here once finalized.
 
-1. **Project Title**
+### B) Visualize in Grafana
+- Open Grafana: `http://localhost:3000`
+- Add InfluxDB as a data source
+- Import or build dashboards (e.g., activity timeline, temperature trends, anomaly flags)
 
-   * Example: `IoT Application for Tracking Farm Animals`
-
-2. **Custom Algorithms (optional, comma-separated)**
-
-   * Example: `GRU, BiLSTM, XGBoost-Tiny`
-   * Leave blank if you do not have custom algorithms.
-
-After that, the installer will:
-
-* Generate a project folder (example: `Student_FYP/`)
-* Create a Python environment (example: `venv/`)
-* Install all required packages
+### C) Train & Evaluate Models
+- Place datasets in `data/raw/`
+- Run preprocessing scripts in `src/data/`
+- Train models via scripts in `src/train/`
+- Save metrics to `results/metrics/` and checkpoints to `results/checkpoints/`
 
 ---
 
-## Launch the Dashboard
+## Repository Structure
 
-After you see **✅ INSTALLATION COMPLETE**, go into the generated folder:
-
-```bash
-cd Student_FYP
-```
-
-Activate the environment:
-
-```bash
-source venv/bin/activate
-```
-
-Run the dashboard:
-
-```bash
-streamlit run app.py
-```
-
-Open in your browser:
-
-* `http://localhost:8501`
-
----
-
-
+```text
+precision-livestock-iot/
+├── data/
+│   ├── raw/                # raw datasets (not tracked)
+│   └── processed/          # processed datasets (not tracked)
+├── docker-compose.yml      # backend services (Mosquitto/InfluxDB/Grafana)
+├── docker-data/            # persisted volumes for containers (local only)
+├── docs/                   # documents, diagrams, writeups
+├── firmware/               # ESP32 sensor-node firmware
+├── notebooks/              # EDA / experiments
+├── reports/figures/        # exported figures
+├── results/
+│   ├── checkpoints/        # saved training checkpoints
+│   └── metrics/            # evaluation outputs
+├── scripts/                # helper scripts
+├── src/
+│   ├── data/               # ingestion + preprocessing
+│   ├── models/             # model definitions
+│   ├── train/              # training + evaluation
+│   └── utils/              # shared utilities
+└── tests/                  # unit/integration tests
 

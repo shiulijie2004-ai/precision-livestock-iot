@@ -3,25 +3,43 @@
 """
 predictor_xgboost.py
 
-Real-time cattle behaviour prediction using exported XGBoost / sklearn joblib model.
+Correct real-time XGBoost predictor for Japan cow accelerometer-only model.
 
-Pipeline:
-- Subscribe to MQTT sensor topic: farm/cow/+/sensors
-- Keep rolling window per cow_id
-- Convert latest window into model input features
-- Predict behaviour
-- Publish prediction to: farm/cow/{cow_id}/predictions
+This version is designed for:
+
+Training dataset:
+    japan_cows_1to6_merged_dashboard.csv
+
+Training features:
+    AccX, AccY, AccZ
+
+Live MQTT sensor keys:
+    ax_g, ay_g, az_g
+
+Model:
+    deployment_builds/XGBoost_final.joblib
+
+Expected model input:
+    18 statistical features
+
+Feature order MUST match train_correct_xgboost_japan.py:
+
+    mean_ax, mean_ay, mean_az,
+    std_ax, std_ay, std_az,
+    min_ax, min_ay, min_az,
+    max_ax, max_ay, max_az,
+    range_ax, range_ay, range_az,
+    energy_ax, energy_ay, energy_az
 
 Important:
-This version supports BOTH:
-1. Flatten/raw-window features:
-   Example: window=50, 6 sensor channels
-   50 x 6 = 300 features
+    energy = sum of squares over the window, NOT mean of squares.
 
-2. Statistical features fallback:
-   Example: 6 channels x 6 stats = 36 features
+Pipeline:
+    MQTT sensor topic:
+        farm/cow/+/sensors
 
-The script automatically checks model.n_features_in_ and chooses the correct format.
+    Prediction output topic:
+        farm/cow/{cow_id}/predictions
 """
 
 import os
@@ -47,7 +65,7 @@ def utc_now_iso() -> str:
 
 def make_mqtt_client():
     """
-    Create a Paho MQTT client compatible with old and new versions.
+    Create a Paho MQTT client compatible with old and new paho-mqtt versions.
     """
     try:
         return mqtt.Client(
@@ -61,7 +79,7 @@ def make_mqtt_client():
 def extract_cow_id_from_topic(topic: str) -> str:
     """
     Example:
-    farm/cow/cow1/sensors -> cow1
+        farm/cow/cow1/sensors -> cow1
     """
     parts = [p for p in topic.split("/") if p]
 
@@ -89,9 +107,10 @@ def get_value_case_insensitive(payload: dict, candidates: List[str]) -> Optional
     """
     Read payload value using possible key names.
 
-    Supported examples:
-    ax_g, ax, acc_x, AccX
-    gx_dps, gx, gyro_x, GyroX
+    Examples:
+        ax_g, ax, acc_x, AccX
+        ay_g, ay, acc_y, AccY
+        az_g, az, acc_z, AccZ
     """
     lower_map = {str(k).lower(): k for k in payload.keys()}
 
@@ -108,8 +127,14 @@ def pick_sensor_vector(payload: dict, feature_keys: List[str]) -> Optional[List[
     """
     Extract one row of sensor features in exact order.
 
-    Default order:
-    ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps
+    For your Japan cow XGBoost model, use:
+        --feature-keys ax_g,ay_g,az_g
+
+    Then the vector will be:
+        [ax_g, ay_g, az_g]
+
+    Gyro will NOT be used unless you explicitly include:
+        gx_dps,gy_dps,gz_dps
     """
 
     # Exact user-defined feature keys
@@ -122,23 +147,15 @@ def pick_sensor_vector(payload: dict, feature_keys: List[str]) -> Optional[List[
             vec.append(v)
         return vec
 
-    # Flexible default aliases
+    # Fallback auto-detection: accelerometer first
     ax = get_value_case_insensitive(payload, ["ax_g", "ax", "accx", "acc_x", "AccX"])
     ay = get_value_case_insensitive(payload, ["ay_g", "ay", "accy", "acc_y", "AccY"])
     az = get_value_case_insensitive(payload, ["az_g", "az", "accz", "acc_z", "AccZ"])
 
-    gx = get_value_case_insensitive(payload, ["gx_dps", "gx", "gyrox", "gyro_x", "GyroX"])
-    gy = get_value_case_insensitive(payload, ["gy_dps", "gy", "gyroy", "gyro_y", "GyroY"])
-    gz = get_value_case_insensitive(payload, ["gz_dps", "gz", "gyroz", "gyro_z", "GyroZ"])
-
     if ax is None or ay is None or az is None:
         return None
 
-    # Prefer 6 features if gyro exists
-    if gx is not None and gy is not None and gz is not None:
-        return [ax, ay, az, gx, gy, gz]
-
-    # Fallback accelerometer-only
+    # Default for your project: accelerometer-only
     return [ax, ay, az]
 
 
@@ -148,47 +165,64 @@ def pick_sensor_vector(payload: dict, feature_keys: List[str]) -> Optional[List[
 
 def build_flatten_features(window_data: np.ndarray) -> np.ndarray:
     """
-    Convert rolling window directly into flattened raw features.
+    Flatten raw window.
 
     Example:
-    window_data shape = [50, 6]
+        window = 50
+        sensors = 3
 
     Output:
-    [ax1, ay1, az1, gx1, gy1, gz1,
-     ax2, ay2, az2, gx2, gy2, gz2,
-     ...
-     ax50, ay50, az50, gx50, gy50, gz50]
+        50 x 3 = 150 features
 
-    Output shape = [1, 300]
+    Your current Japan cow XGBoost model should NOT use this,
+    because your correct model expects 18 stats features.
     """
     return window_data.astype(np.float32).reshape(1, -1)
 
 
 def build_stat_features(window_data: np.ndarray) -> np.ndarray:
     """
-    Statistical fallback features.
+    Build statistical features in the SAME order as your training code.
 
-    Per sensor:
-    mean, std, min, max, range, energy
+    Input:
+        window_data shape = [window, sensors]
 
-    If 6 sensors:
-    6 x 6 stats = 36 features
+    For Japan cow:
+        window_data shape = [50, 3]
+        sensor order = ax_g, ay_g, az_g
+
+    Output order:
+        mean_ax, mean_ay, mean_az,
+        std_ax, std_ay, std_az,
+        min_ax, min_ay, min_az,
+        max_ax, max_ay, max_az,
+        range_ax, range_ay, range_az,
+        energy_ax, energy_ay, energy_az
+
+    Important:
+        energy = sum of squares over the window
+        same as training code:
+            (df_x * df_x).rolling(...).sum()
     """
-    feats = []
+    X = np.asarray(window_data, dtype=np.float32)
 
-    for i in range(window_data.shape[1]):
-        x = window_data[:, i].astype(np.float32)
+    mean = np.mean(X, axis=0).astype(np.float32)
+    std = np.std(X, axis=0, ddof=0).astype(np.float32)
+    min_v = np.min(X, axis=0).astype(np.float32)
+    max_v = np.max(X, axis=0).astype(np.float32)
+    range_v = (max_v - min_v).astype(np.float32)
+    energy = np.sum(X ** 2, axis=0).astype(np.float32)
 
-        mean = float(np.mean(x))
-        std = float(np.std(x))
-        min_v = float(np.min(x))
-        max_v = float(np.max(x))
-        range_v = float(max_v - min_v)
-        energy = float(np.mean(x ** 2))
+    feats = np.concatenate([
+        mean,
+        std,
+        min_v,
+        max_v,
+        range_v,
+        energy,
+    ]).astype(np.float32)
 
-        feats.extend([mean, std, min_v, max_v, range_v, energy])
-
-    return np.array(feats, dtype=np.float32).reshape(1, -1)
+    return feats.reshape(1, -1)
 
 
 def get_model_expected_features(model: Any) -> Optional[int]:
@@ -201,7 +235,6 @@ def get_model_expected_features(model: Any) -> Optional[int]:
         except Exception:
             pass
 
-    # Some pipelines store the final estimator
     if hasattr(model, "named_steps"):
         try:
             for step in reversed(list(model.named_steps.values())):
@@ -210,7 +243,6 @@ def get_model_expected_features(model: Any) -> Optional[int]:
         except Exception:
             pass
 
-    # Raw XGBoost booster fallback
     try:
         booster = model.get_booster()
         if booster is not None:
@@ -232,9 +264,20 @@ def build_model_features(
     Build feature row according to mode.
 
     mode:
-    - auto
-    - flatten
-    - stats
+        auto
+        flatten
+        stats
+
+    For your correct Japan cow model:
+        expected_features = 18
+        window = 50
+        feature_keys = ax_g, ay_g, az_g
+
+    Therefore:
+        flatten = 50 x 3 = 150
+        stats = 3 x 6 = 18
+
+    Auto will choose stats.
     """
 
     flat_X = build_flatten_features(window_np)
@@ -246,7 +289,6 @@ def build_model_features(
     if mode == "stats":
         return stat_X, "stats"
 
-    # Auto mode: choose based on model expected feature count
     if expected_features is not None:
         if flat_X.shape[1] == expected_features:
             return flat_X, "flatten"
@@ -260,8 +302,7 @@ def build_model_features(
             f"Check --window and --feature-keys."
         )
 
-    # If expected unknown, prefer flatten for your current model style
-    return flat_X, "flatten"
+    return stat_X, "stats"
 
 
 # ============================================================
@@ -272,27 +313,32 @@ def load_sidecar_json(model_path: Path) -> Optional[dict]:
     """
     Optional sidecar file.
 
-    Example:
-    XGBoost_final.joblib
-    XGBoost_final.json
+    Supported:
+        XGBoost_final.json
+        XGBoost_final_features.json
 
-    Can contain:
-    {
-      "window": 50,
-      "feature_cols": ["ax_g", "ay_g", "az_g", "gx_dps", "gy_dps", "gz_dps"],
-      "class_order": ["eating", "ruminating", "standing", "walking"]
-    }
+    It can contain either:
+        feature_cols
+
+    or:
+        live_sensor_keys_expected
     """
-    sidecar = model_path.with_suffix(".json")
+    candidates = [
+        model_path.with_suffix(".json"),
+        model_path.with_name(model_path.stem + "_features.json"),
+    ]
 
-    if not sidecar.exists():
-        return None
+    for sidecar in candidates:
+        if not sidecar.exists():
+            continue
 
-    try:
-        return json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"[WARN] Cannot read sidecar JSON: {sidecar} | {e}")
-        return None
+        try:
+            print(f"[OK] Found metadata JSON: {sidecar}")
+            return json.loads(sidecar.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[WARN] Cannot read sidecar JSON: {sidecar} | {e}")
+
+    return None
 
 
 # ============================================================
@@ -302,21 +348,15 @@ def load_sidecar_json(model_path: Path) -> Optional[dict]:
 def get_label_from_prediction(pred_raw: Any, classes: List[str]) -> Tuple[int, str]:
     """
     Convert model prediction into label_id and label string.
-
-    Handles:
-    - numeric class id: 0, 1, 2, 3
-    - string class label: standing, walking, etc.
     """
 
     pred = pred_raw[0]
 
-    # If model directly returns string label
     if isinstance(pred, str):
         label = pred
         label_id = classes.index(label) if label in classes else -1
         return label_id, label
 
-    # numpy string type
     if hasattr(pred, "item"):
         try:
             pred_item = pred.item()
@@ -328,7 +368,6 @@ def get_label_from_prediction(pred_raw: Any, classes: List[str]) -> Tuple[int, s
         except Exception:
             pass
 
-    # Numeric class id
     try:
         label_id = int(pred)
         label = classes[label_id] if 0 <= label_id < len(classes) else str(label_id)
@@ -358,7 +397,8 @@ def get_confidence_and_probs(model: Any, X: np.ndarray, label_id: int) -> Tuple[
 
         return conf, probs_list
 
-    except Exception:
+    except Exception as e:
+        print(f"[WARN] predict_proba failed: {e}")
         return 0.0, None
 
 
@@ -413,14 +453,14 @@ def main():
     parser.add_argument(
         "--feature-keys",
         default=os.getenv("XGB_FEATURE_KEYS", ""),
-        help="Exact payload feature keys. Example: ax_g,ay_g,az_g,gx_dps,gy_dps,gz_dps"
+        help="Exact payload feature keys. For Japan cow use: ax_g,ay_g,az_g"
     )
 
     parser.add_argument(
         "--feature-mode",
         choices=["auto", "flatten", "stats"],
         default=os.getenv("XGB_FEATURE_MODE", "auto"),
-        help="Feature building mode. Use auto normally."
+        help="Use stats for the correct Japan cow XGBoost model."
     )
 
     parser.add_argument(
@@ -436,20 +476,33 @@ def main():
     if not model_path.exists():
         raise SystemExit(f"[FATAL] XGBoost model not found: {model_path}")
 
-    # Load optional sidecar metadata
+    # Load optional metadata
     sidecar = load_sidecar_json(model_path)
 
     if sidecar:
-        args.window = int(sidecar.get("window", args.window))
+        if "window" in sidecar:
+            args.window = int(sidecar.get("window", args.window))
 
         if isinstance(sidecar.get("feature_cols"), list) and sidecar["feature_cols"]:
             args.feature_keys = ",".join([str(x) for x in sidecar["feature_cols"]])
 
+        if isinstance(sidecar.get("live_sensor_keys_expected"), list) and sidecar["live_sensor_keys_expected"]:
+            args.feature_keys = ",".join([str(x) for x in sidecar["live_sensor_keys_expected"]])
+
         if isinstance(sidecar.get("class_order"), list) and sidecar["class_order"]:
             args.classes = ",".join([str(x) for x in sidecar["class_order"]])
 
+        if isinstance(sidecar.get("target_classes"), list) and sidecar["target_classes"]:
+            args.classes = ",".join([str(x) for x in sidecar["target_classes"]])
+
+        if "feature_mode" in sidecar:
+            args.feature_mode = str(sidecar.get("feature_mode", args.feature_mode))
+
     classes = [c.strip() for c in args.classes.split(",") if c.strip()]
     feature_keys = [k.strip() for k in args.feature_keys.split(",") if k.strip()]
+
+    if not classes:
+        raise SystemExit("[FATAL] No classes provided.")
 
     # Load model
     model = joblib.load(model_path)
@@ -467,6 +520,14 @@ def main():
     print(f"  feature_keys     : {feature_keys if feature_keys else 'auto'}")
     print(f"  feature_mode     : {args.feature_mode}")
     print(f"  publish          : {'NO' if args.no_publish else 'YES'}")
+
+    # Safety warning for your case
+    if expected_features == 18 and len(feature_keys) == 3:
+        print("[OK] Japan cow accelerometer-only setup detected: 3-axis stats -> 18 features")
+
+    if expected_features == 300:
+        print("[WARN] This model expects 300 features. That usually means 50 x 6-axis flatten.")
+        print("[WARN] This is NOT suitable for Japan cow accelerometer-only prediction.")
 
     client = make_mqtt_client()
 
@@ -504,19 +565,14 @@ def main():
 
         if vec is None:
             print(f"[WARN] Missing sensor features from topic={msg.topic}")
+            print(f"[WARN] Payload keys: {list(payload.keys())}")
+            print(f"[WARN] Required feature_keys: {feature_keys if feature_keys else 'auto ax_g/ay_g/az_g'}")
             return
 
-        # Decide sensor names
         if feature_keys:
             sensor_names = feature_keys
         else:
-            if len(vec) == 3:
-                sensor_names = ["ax_g", "ay_g", "az_g"]
-            elif len(vec) == 6:
-                sensor_names = ["ax_g", "ay_g", "az_g", "gx_dps", "gy_dps", "gz_dps"]
-            else:
-                print(f"[WARN] Unsupported feature length: {len(vec)}")
-                return
+            sensor_names = ["ax_g", "ay_g", "az_g"]
 
         if cow_id not in buffers:
             buffers[cow_id] = deque(maxlen=args.window)
@@ -524,7 +580,6 @@ def main():
             sensor_names_by_cow[cow_id] = sensor_names
             print(f"[{cow_id}] sensor features = {sensor_names}")
 
-        # Safety: same cow must keep same feature length
         if len(vec) != len(sensor_names_by_cow[cow_id]):
             print(
                 f"[WARN] Feature length changed for {cow_id}. "
@@ -535,12 +590,10 @@ def main():
         buffers[cow_id].append(vec)
         counters[cow_id] += 1
 
-        # Need full rolling window first
         if len(buffers[cow_id]) < args.window:
             print(f"[{cow_id}] collecting window {len(buffers[cow_id])}/{args.window}")
             return
 
-        # Predict every N messages
         if args.pred_every > 1 and (counters[cow_id] % args.pred_every) != 0:
             return
 
